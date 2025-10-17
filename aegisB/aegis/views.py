@@ -58,6 +58,7 @@ from .serializers import (
     EmergencyContactCreateSerializer,
     EmergencyIncidentReportListSerializer,
     EmergencyIncidentReportSerializer,
+    EmergencyMediaUploadSerializer,
     EmergencyNotificationSerializer,
     EmergencyReportEvidenceSerializer,
     EmergencyResponseSerializer,
@@ -1585,7 +1586,7 @@ def upload_media(request):
     - duration: 30 (optional, for audio/video)
     """
     print('upload media called')
-    serializer = MediaUploadSerializer(data=request.data)
+    serializer = EmergencyMediaUploadSerializer(data=request.data)
     if serializer.is_valid():
         try:
             alert = get_object_or_404(EmergencyAlert, alert_id=serializer.validated_data['alert_id'], user=request.user)
@@ -1748,6 +1749,8 @@ def update_response_status(request):
         "eta_minutes": 5
     }
     """
+    print(request.data)
+
     if request.user.user_type != 'agent':
         return Response({
             'success': False,
@@ -1758,6 +1761,7 @@ def update_response_status(request):
     new_status = request.data.get('status')
     
     if not response_id or not new_status:
+        print('response_id and status are required')
         return Response({
             'success': False,
             'error': 'response_id and status are required'
@@ -3124,12 +3128,14 @@ def find_safe_route(request):
         headers = {
             'Authorization': OPENROUTE_API_KEY
         }
-        geocode_params = {
-            'text': destination,
-            'size': 5
+        params = {
+            'text': f'{destination}, Bangladesh',
+            'boundary.country': 'BGD',
+            'size': 5,
+            'lang': 'en'
         }
         
-        geocode_response = requests.get(geocode_url, headers=headers, params=geocode_params)
+        geocode_response = requests.get(geocode_url, headers=headers, params=params)
         print(f"Geocode response status: {geocode_response.status_code}")
         
         if geocode_response.status_code != 200:
@@ -3365,7 +3371,7 @@ def find_safe_route(request):
             'error': f'Internal server error: {str(e)}'
         }, status=500)
     
-    
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

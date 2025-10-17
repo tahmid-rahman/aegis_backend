@@ -499,7 +499,7 @@ class LocationUpdateRequestSerializer(serializers.Serializer):
     altitude = serializers.FloatField(required=False)
     heading = serializers.FloatField(required=False)
 
-class MediaUploadSerializer(serializers.Serializer):
+class EmergencyMediaUploadSerializer(serializers.Serializer):
     alert_id = serializers.CharField(max_length=20, required=True)
     media_type = serializers.ChoiceField(choices=MediaCapture.MEDIA_TYPES)
     file = serializers.FileField(required=True)
