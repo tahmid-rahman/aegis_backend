@@ -178,3 +178,5 @@ CORS_ALLOW_CREDENTIALS = True
 load_dotenv()
 
 OPENROUTE_API_KEY = os.getenv('OPENROUTE_API_KEY')
+
+TEST_RUNNER = 'django.test.runner.DiscoverRunner'

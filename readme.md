@@ -1,8 +1,8 @@
 # Aegis Backend
 
-[![Build Status](https://img.shields.io/travis/com/your-username/aegis_backend.svg?style=flat-square)](https://travis-ci.com/your-username/aegis_backend)
-[![Coverage Status](https://img.shields.io/coveralls/github/your-username/aegis_backend.svg?style=flat-square)](https://coveralls.io/github/your-username/aegis_backend?branch=main)
-[![License](https://img.shields.io/github/license/your-username/aegis_backend.svg?style=flat-square)](LICENSE)
+[![Build Status](https://img.shields.io/travis/com/tahmid-rahman/aegis_backend.svg?style=flat-square)](https://travis-ci.com/tahmid-rahman/aegis_backend)
+[![Coverage Status](https://img.shields.io/coveralls/github/tahmid-rahman/aegis_backend.svg?style=flat-square)](https://coveralls.io/github/tahmid-rahman/aegis_backend?branch=main)
+[![License](https://img.shields.io/github/license/tahmid-rahman/aegis_backend.svg?style=flat-square)](LICENSE)
 
 Aegis is a Django-based backend system designed to manage and respond to emergencies. It provides a platform for civilians to report incidents, for officials to manage them, and for administrators to oversee the system.
 
