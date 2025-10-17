@@ -104,7 +104,6 @@ urlpatterns = [
     path('emergency-response/report-evidence/', views.emergency_report_evidence, name='emergency-report-evidence'),
     path('emergency-response/report-evidence/<int:pk>/', views.delete_emergency_report_evidence, name='delete-emergency-report-evidence'),
 
-    path('emergency-history-location/', views.get_emergency_history_location, name='emergency-history-location'),
 
     # Responder Management
     path('responder/assignments/', views.get_responder_assignments, name='responder-assignments'),
@@ -117,6 +116,7 @@ urlpatterns = [
 
 
     # Safe Locations
+    path('emergency-history-location/', views.get_emergency_history_location, name='emergency-history-location'),
     path('safe-locations/', views.get_safe_locations, name='safe-locations'),
     path('safe-locations/create/', views.create_safe_location, name='create-safe-location'),
     path('find-safe-route/', views.find_safe_route, name='find-safe-route'),

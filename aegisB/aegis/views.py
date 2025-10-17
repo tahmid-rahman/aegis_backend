@@ -3103,72 +3103,43 @@ def get_emergency_history_location(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def find_safe_route(request):
-    """Find safe route using OpenRouteService API"""
+    """Find safe route avoiding emergency locations"""
     try:
+        # Get request data
         destination = request.data.get('destination')
-        current_lat = request.data.get('current_lat', 23.8103)  # Default Dhaka coordinates
-        current_lng = request.data.get('current_lng', 90.4125)
-        print(destination,current_lat,current_lng)
-        if not destination:
+        current_lat = request.data.get('current_lat')
+        current_lng = request.data.get('current_lng')
+        
+        if not all([destination, current_lat, current_lng]):
             return Response({
                 'success': False,
-                'error': 'Destination is required'
+                'error': 'Destination, current_lat, and current_lng are required'
             }, status=400)
         
-        # Get user's emergency locations to avoid
-        emergency_locations = EmergencyAlert.objects.filter(
-            user=request.user,
-            initial_latitude__isnull=False,
-            initial_longitude__isnull=False
-        ).values('initial_latitude', 'initial_longitude', 'initial_address', 'emergency_type')[:5]
+        print(f"Finding route to: {destination}")
+        print(f"Current location: {current_lat}, {current_lng}")
         
-        avoided_locations = []
-        avoidance_polygons = []
-        
-        for loc in emergency_locations:
-            lat = float(loc['initial_latitude'])
-            lng = float(loc['initial_longitude'])
-            
-            avoided_locations.append({
-                'address': loc['initial_address'],
-                'type': loc['emergency_type'],
-                'lat': lat,
-                'lng': lng
-            })
-            
-            # Create avoidance polygons around emergency locations (500m radius)
-            avoidance_polygons.append([
-                [lng - 0.005, lat - 0.005],  # SW
-                [lng + 0.005, lat - 0.005],  # SE
-                [lng + 0.005, lat + 0.005],  # NE
-                [lng - 0.005, lat + 0.005],  # NW
-                [lng - 0.005, lat - 0.005]   # Close polygon
-            ])
-        
-        # Step 1: Geocode destination using OpenRouteService Geocoding
+        # Step 1: Geocode destination
         geocode_url = "https://api.openrouteservice.org/geocode/search"
-        geocode_headers = {
+        headers = {
             'Authorization': OPENROUTE_API_KEY
         }
         geocode_params = {
             'text': destination,
-            'boundary.country': 'BGD',  # Bangladesh
-            'size': 1
+            'size': 5
         }
         
-        geocode_response = requests.get(
-            geocode_url, 
-            headers=geocode_headers, 
-            params=geocode_params
-        )
+        geocode_response = requests.get(geocode_url, headers=headers, params=geocode_params)
+        print(f"Geocode response status: {geocode_response.status_code}")
         
         if geocode_response.status_code != 200:
             return Response({
                 'success': False,
-                'error': 'Could not find destination location'
+                'error': f'Geocoding failed: {geocode_response.text}'
             }, status=400)
         
         geocode_data = geocode_response.json()
+        print(f"Geocode results: {len(geocode_data.get('features', []))}")
         
         if not geocode_data.get('features'):
             return Response({
@@ -3176,132 +3147,225 @@ def find_safe_route(request):
                 'error': 'Destination not found'
             }, status=400)
         
-        # Extract destination coordinates
-        dest_feature = geocode_data['features'][0]
-        dest_coords = dest_feature['geometry']['coordinates']  # [lng, lat]
-        dest_address = dest_feature['properties']['label']
+        # Use the first result (most relevant)
+        destination_feature = geocode_data['features'][0]
+        dest_coords = destination_feature['geometry']['coordinates']  # [lng, lat]
+        dest_address = destination_feature['properties']['label']
         
-        # Step 2: Get route from OpenRouteService Directions API
-        route_url = "https://api.openrouteservice.org/v2/directions/driving-car"
-        route_headers = {
-            'Authorization': OPENROUTE_API_KEY,
-            'Content-Type': 'application/json'
-        }
+        print(f"Found destination: {dest_address} at {dest_coords}")
         
-        # Prepare coordinates: [start_lng, start_lat], [end_lng, end_lat]
-        coordinates = [
-            [current_lng, current_lat],
-            dest_coords
-        ]
+        # Step 2: Get emergency locations to avoid from EmergencyAlert model
+        emergency_alerts = EmergencyAlert.objects.filter(
+            initial_latitude__isnull=False,
+            initial_longitude__isnull=False
+        ).exclude(
+            Q(initial_latitude=0) | Q(initial_longitude=0)
+        ).order_by('-activated_at')[:10]  # Get recent emergencies
+        
+        avoided_locations = []
+        avoid_polygons = []
+        
+        for alert in emergency_alerts:
+            avoided_locations.append({
+                'lat': float(alert.initial_latitude),
+                'lng': float(alert.initial_longitude),
+                'address': alert.initial_address or "Emergency Location",
+                'type': alert.emergency_type or 'emergency',
+                'timestamp': alert.activated_at.strftime('%Y-%m-%d')
+            })
+            
+            # Create a small avoidance buffer around each emergency location
+            buffer_radius = 0.005  # ~500m in degrees
+            avoid_polygons.append([
+                [float(alert.initial_longitude) - buffer_radius, float(alert.initial_latitude) - buffer_radius],
+                [float(alert.initial_longitude) + buffer_radius, float(alert.initial_latitude) - buffer_radius],
+                [float(alert.initial_longitude) + buffer_radius, float(alert.initial_latitude) + buffer_radius],
+                [float(alert.initial_longitude) - buffer_radius, float(alert.initial_latitude) + buffer_radius],
+                [float(alert.initial_longitude) - buffer_radius, float(alert.initial_latitude) - buffer_radius]
+            ])
+        
+        # Step 3: Calculate route avoiding emergency areas
+        route_url = "https://api.openrouteservice.org/v2/directions/driving-car/geojson"
         
         route_body = {
-            "coordinates": coordinates,
+            "coordinates": [
+                [float(current_lng), float(current_lat)],  # Start
+                dest_coords  # Destination
+            ],
             "instructions": False,
             "preference": "recommended"
         }
         
-        # Add avoidance areas if there are emergency locations
-        if avoidance_polygons:
+        # Add avoidance polygons only if they exist
+        if avoid_polygons:
             route_body["options"] = {
                 "avoid_polygons": {
                     "type": "MultiPolygon",
-                    "coordinates": [avoidance_polygons]
+                    "coordinates": [[polygon] for polygon in avoid_polygons]
                 }
             }
         
-        route_response = requests.post(
-            route_url, 
-            json=route_body, 
-            headers=route_headers
-        )
+        print("Calculating route...")
+        route_response = requests.post(route_url, headers=headers, json=route_body)
         
+        # Check for route calculation errors
         if route_response.status_code != 200:
-            # Fallback: Try without avoidance
-            route_body.pop('options', None)
-            route_response = requests.post(
-                route_url, 
-                json=route_body, 
-                headers=route_headers
-            )
+            error_data = route_response.json()
+            print(f"Route API error: {error_data}")
             
-            if route_response.status_code != 200:
+            # Try without avoidance if route calculation fails
+            print("Trying route without avoidance polygons...")
+            fallback_body = {
+                "coordinates": [
+                    [float(current_lng), float(current_lat)],
+                    dest_coords
+                ],
+                "instructions": False,
+                "preference": "recommended"
+            }
+            
+            fallback_response = requests.post(route_url, headers=headers, json=fallback_body)
+            
+            if fallback_response.status_code != 200:
                 return Response({
                     'success': False,
-                    'error': 'Could not calculate route'
+                    'error': 'Unable to calculate route. Please check your coordinates and try again.'
                 }, status=400)
+            
+            # Use fallback route data
+            route_data = fallback_response.json()
+            print("Fallback route calculated successfully")
+        else:
+            route_data = route_response.json()
+            print("Route calculated successfully")
         
-        route_data = route_response.json()
+        # Validate route data structure
+        if 'features' not in route_data or not route_data['features']:
+            print(f"Route calculation error: 'features' missing in response")
+            return Response({
+                'success': False,
+                'error': 'No route found - try adjusting your destination or check for service outages'
+            }, status=400)
         
         # Extract route information
         route_feature = route_data['features'][0]
-        geometry = route_feature['geometry']['coordinates']  # Full path coordinates
-        properties = route_feature['properties']['summary']
+        route_geometry = route_feature['geometry']['coordinates']
+        route_properties = route_feature['properties']
         
-        distance_km = properties['distance'] / 1000  # Convert to km
-        duration_min = properties['duration'] / 60   # Convert to minutes
+        # Calculate total distance and duration
+        total_distance = sum(segment.get('distance', 0) for segment in route_properties.get('segments', [{}]))
+        total_duration = sum(segment.get('duration', 0) for segment in route_properties.get('segments', [{}]))
         
-        # Calculate safety rating based on avoided locations
-        safety_rating = max(1.0, 5.0 - (len(avoided_locations) * 0.1))
+        # Format distance and duration for display
+        distance_km = total_distance / 1000
+        duration_min = total_duration / 60
         
-        # Generate waypoints from the route
-        waypoints = []
-        if len(geometry) >= 3:
-            # Take start, middle, and end points as waypoints
-            waypoints = [
-                "Current Location",
-                f"Waypoint 1",
-                f"Waypoint 2", 
-                dest_address
-            ]
-        
-        # Prepare route data for saving
+        # Store start and end coordinates in route_data
         route_info = {
             'distance': f"{distance_km:.1f} km",
             'duration': f"{duration_min:.0f} min",
-            'safety_rating': round(safety_rating, 1),
-            'features': [
-                'Avoids emergency locations' if avoided_locations else 'Direct route',
-                'Real-time navigation',
-                'Live location sharing'
-            ],
-            'waypoints': waypoints,
-            'route_path': geometry,
-            'start_location': [current_lng, current_lat],
-            'end_location': dest_coords,
-            'raw_route_data': route_data
+            'route_path': route_geometry,
+            'summary': route_properties.get('summary', {}),
+            'start_coords': [float(current_lng), float(current_lat)],
+            'end_coords': dest_coords,
+            'start_address': f"Current Location ({current_lat:.4f}, {current_lng:.4f})",
+            'end_address': dest_address
         }
         
-        # Save the route to database
+        # Step 4: Save route to database - using only the fields that exist in your model
         safe_route = SafeRoute.objects.create(
             user=request.user,
             destination=dest_address,
             route_data=route_info,
-            avoided_locations=avoided_locations
+            avoided_locations=avoided_locations,
+            is_active=True
         )
+        
+        # Step 5: Prepare response with GeoJSON
+        geojson_response = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": f"Safe Route to {dest_address}",
+                        "distance": route_info['distance'],
+                        "duration": route_info['duration'],
+                        "route_id": safe_route.id
+                    },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": route_geometry
+                    }
+                },
+                # Start point
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": "Start Location",
+                        "marker-color": "#00ff00",
+                        "marker-symbol": "circle"
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [float(current_lng), float(current_lat)]
+                    }
+                },
+                # Destination point
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": f"Destination: {dest_address}",
+                        "marker-color": "#ff0000",
+                        "marker-symbol": "circle"
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": dest_coords
+                    }
+                }
+            ]
+        }
+        
+        # Add avoided locations as point features
+        for i, location in enumerate(avoided_locations):
+            geojson_response['features'].append({
+                "type": "Feature",
+                "properties": {
+                    "name": f"Avoided: {location['address']}",
+                    "type": location['type'],
+                    "timestamp": location.get('timestamp', ''),
+                    "marker-color": "#ff0000",
+                    "marker-symbol": "danger"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [location['lng'], location['lat']]
+                }
+            })
         
         return Response({
             'success': True,
-            'data': {
-                'route_id': safe_route.id,
+            'route_id': safe_route.id,
+            'geojson': geojson_response,
+            'summary': {
                 'destination': dest_address,
                 'distance': route_info['distance'],
                 'duration': route_info['duration'],
-                'safety_rating': route_info['safety_rating'],
-                'features': route_info['features'],
-                'avoided_locations': avoided_locations,
-                'waypoints': waypoints,
-                'route_path': geometry,  # Full coordinate path for the map
-                'start_location': [current_lng, current_lat],
-                'end_location': dest_coords,
-                'bounds': route_feature.get('bbox', [])  # Map bounds
+                'avoided_locations_count': len(avoided_locations)
             }
         })
         
     except Exception as e:
+        print(f"Internal Server Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return Response({
             'success': False,
-            'error': f'Route calculation failed: {str(e)}'
+            'error': f'Internal server error: {str(e)}'
         }, status=500)
+    
+    
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -3453,3 +3517,47 @@ def start_navigation(request):
             'success': False,
             'error': str(e)
         }, status=500)
+    
+
+def test_api_key():
+    """Test API key with a simple geocoding request"""
+    test_url = "https://api.openrouteservice.org/geocode/search"
+    # headers = {
+    #     'Authorization': 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjEzYTEzMTM3NjhlYzRjNGFhM2I5ZDE2ZTdjNGU4YzFiIiwiaCI6Im11cm11cjY0In0=',
+    #     'Accept': 'application/json'
+    # }
+    headers = {
+        'Authorization': OPENROUTE_API_KEY,
+        'Accept': 'application/json'
+    }
+    print(headers['Authorization'])
+    print(OPENROUTE_API_KEY)
+    # Test with a simple, known location
+    params = {
+        'text': 'Gulshan 1, Dhaka, Bangladesh',
+        'size': 1
+    }
+    
+    try:
+        response = requests.get(test_url, headers=headers, params=params, timeout=10)
+        print(f"API Test - Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(" API Key is valid and working!")
+            return True
+        elif response.status_code == 403:
+            print("❌ API Key is invalid or unauthorized")
+            print(f"Response: {response.text}")
+            return False
+        elif response.status_code == 404:
+            print("❌ Endpoint not found - check API key format")
+            return False
+        else:
+            print(f"❌ Unexpected status: {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ API Test error: {e}")
+        return False
