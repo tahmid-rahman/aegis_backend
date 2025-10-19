@@ -1,7 +1,7 @@
 # serializers.py
 from rest_framework import serializers
 from django.contrib.auth import authenticate, password_validation
-from .models import CustomUser, EmergencyAssignment
+from .models import CustomUser, EmergencyAssignment, SafetyScore
 from datetime import date
 
 class UserSerializer(serializers.ModelSerializer):
@@ -140,3 +140,10 @@ class PasswordChangeSerializer(serializers.Serializer):
             )
         
         return data
+    
+
+
+class SafetyScoreSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SafetyScore
+        fields = '__all__'

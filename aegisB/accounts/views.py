@@ -9,8 +9,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.db import models
-from .models import CustomUser
-from .serializers import PasswordChangeSerializer, ResponderSerializer, UserSerializer, LoginSerializer, UserProfileSerializer,ProfilePictureSerializer
+from .models import CustomUser, SafetyScore
+from .serializers import PasswordChangeSerializer, ResponderSerializer, SafetyScoreSerializer, UserSerializer, LoginSerializer, UserProfileSerializer,ProfilePictureSerializer
 from . import serializers
 
 @api_view(['POST'])
@@ -22,6 +22,13 @@ def register_user(request):
         
         # Create token for the new user
         token, created = Token.objects.get_or_create(user=user)
+
+        try:
+            safety_score = SafetyScore.objects.create(
+                user=user,
+            )
+        except Exception as e:
+            print(f"Error creating safety score: {e}")
         
         print('User registered:', user.email)
         return Response({
@@ -258,3 +265,92 @@ def change_password(request):
             )
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# safety score 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_safety_score(request):
+    serializer = SafetyScoreSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_safety_scores(request):
+    scores = SafetyScore.objects.all()
+    serializer = SafetyScoreSerializer(scores, many=True)
+    return Response(serializer.data)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def sub_safety_score(request):
+    try:
+        score_instance = SafetyScore.objects.get(user=request.user)
+
+        # Decrease score by 5
+        new_score = max(score_instance.score - 5, 0) 
+        score_instance.score = new_score
+        score_instance.save()
+
+        serializer = SafetyScoreSerializer(score_instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    except SafetyScore.DoesNotExist:
+        return Response(
+            {"error": "Safety score not found"},
+            status=status.HTTP_404_NOT_FOUND
+        ) 
+    
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def add_safety_score(request):
+    try:
+        score_instance = SafetyScore.objects.get(user=request.user)
+
+        new_score = min(score_instance.score + 1, 100)  
+        score_instance.score = new_score
+        score_instance.save()
+
+        serializer = SafetyScoreSerializer(score_instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    except SafetyScore.DoesNotExist:
+        return Response(
+            {"error": "Safety score not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_safety_score(request):
+    try:
+        score = SafetyScore.objects.get(user=request.user)
+        score.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    except SafetyScore.DoesNotExist:
+        return Response(
+            {"error": "Safety score not found"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_my_safety_score(request):
+    try:
+        score = SafetyScore.objects.get(user=request.user)
+        serializer = SafetyScoreSerializer(score)
+        return Response(serializer.data)
+    except SafetyScore.DoesNotExist:
+        return Response(
+            {"error": "Safety score not found"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    

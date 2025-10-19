@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator, MaxValueValidator
 from .managers import CustomUserManager
 from django.utils import timezone
 
@@ -126,3 +127,29 @@ class EmergencyAssignment(models.Model):
     
     class Meta:
         db_table = 'emergency_assignments'
+
+
+
+
+class SafetyScore(models.Model):
+    user = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE,
+        related_name='safety_scores'
+    )
+    score = models.IntegerField(
+        validators=[
+            MinValueValidator(0),
+            MaxValueValidator(100)
+        ],
+        help_text="Safety score from 0 to 100",
+        default=100
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.full_name} - {self.score}/100"

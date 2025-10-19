@@ -20,7 +20,7 @@ urlpatterns = [
     path('learn/resources/<int:resource_id>/bookmark/', views.toggle_bookmark, name='toggle-bookmark'),
     path('learn/resources/<int:resource_id>/quiz/submit/', views.submit_quiz, name='submit-quiz'),
     path('learn/progress/', views.user_progress, name='user-progress'),
-    path('learn/quiz-history/', views.user_quiz_history, name='user-quiz-history'),
+    path('learn/quiz-history/', views.user_quiz_history_list, name='user-quiz-history-list'),
     path('learn/bookmarks/', views.bookmarked_resources, name='bookmarked-resources'),
 
     path('learn/categories/create/', views.create_resource_category, name='create-resource-category'),
@@ -36,6 +36,8 @@ urlpatterns = [
     path('learn/categories/<int:category_id>/update/', views.update_resource_category, name='update-resource-category'),
     path('learn/external-links/<int:link_id>/update/', views.update_external_link, name='update-external-link'),
     
+    path('learn/quiz-history/<int:id>/', views.user_quiz_history, name='user-quiz-history'),
+    path('learn/quiz-attempt/<int:id>/', views.user_quiz_attempt, name='user-quiz-attempt'),
     path('learn/resources/<int:id>/delete/', views.learning_resource_delete, name='learning-resource-delete'),
     path('learn/quiz-questions/<int:question_id>/delete/', views.delete_quiz_question, name='delete-quiz-question'),
     path('learn/quiz-options/<int:option_id>/delete/', views.delete_quiz_option, name='delete-quiz-option'),
@@ -125,7 +127,11 @@ urlpatterns = [
     path('reverse-geocode/', views.reverse_geocode, name='reverse-geocode'),
     
 
+    # deshboard and analytics
 
+    path('dashboard-details/', views.comprehensive_dashboard_view, name='comprehensive-dashboard-view'),
+    path('dashboard-analytics/', views.dashboard_analytics, name='analytics-dashboard'),
+    path('user-stastics/', views.alert_activated, name='alert-activated'),
 
 
 ]

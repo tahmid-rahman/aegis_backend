@@ -582,8 +582,9 @@ class EmergencyResponse(models.Model):
         ('accepted', 'Accepted'),
         ('en_route', 'En Route'),
         ('on_scene', 'On Scene'),
-        ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
+        ('completed', 'Completed'),
+        ('rejected', 'Rejected'),
     ]
     
     alert = models.ForeignKey(EmergencyAlert, on_delete=models.CASCADE, related_name='responses')
