@@ -36,6 +36,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://192.168.0.155:3000",
     "http://127.0.0.1:3000",
     "http://10.15.55.184:3000",
+    "http://10.15.21.232:3000",
 ]
 # Application definition
 
